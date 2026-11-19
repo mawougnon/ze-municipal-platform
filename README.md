@@ -97,7 +97,7 @@ Vercel deploys `master`. Migrations are applied by hand with `npm run db:migrate
 
 ## How it was built
 
-Co-authored with Claude Opus 5.5, Anthropic's AI coding assistant.
+Co-authored with Claude, Anthropic's AI coding assistant.
 
 ## License
 
