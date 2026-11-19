@@ -7,15 +7,47 @@ import { prisma } from "@/lib/prisma";
 const CODE_TTL_MS = 10 * 60 * 1000;
 const CODE_INTERVAL_MS = 2 * 60 * 1000;
 export const MAX_ATTEMPTS = 5;
+// Wrong codes per account over a day, all codes together. Past it, the account gets no code.
+export const MAX_DAILY_FAILURES = 20;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+export class EmailError extends Error {}
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+async function sendEmail(to: string, subject: string, body: string) {
+  const { error } = await resend.emails.send({
+    from: "Mairie de Zè <onboarding@resend.dev>",
+    to,
+    subject,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: auto; padding: 32px 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <h2 style="color: #1a3a2a; margin: 0 0 8px;">Mairie des Jeunes de Zè</h2>
+        <p style="color: #6b7280; font-size: 13px; margin: 0 0 24px;">Espace Administration · Accès restreint</p>
+        ${body}
+      </div>
+    `,
+  });
+  if (error) throw new EmailError(error.message);
+}
+
+function countToday(email: string, action: string) {
+  return prisma.auditLog.count({
+    where: { userEmail: email, action, createdAt: { gte: new Date(Date.now() - DAY_MS) } },
+  });
+}
+
+async function suspended(email: string) {
+  return (await countToday(email, "LOGIN_OTP_FAILED")) >= MAX_DAILY_FAILURES;
+}
+
 export async function requestLoginCode(rawEmail: string, ip: string | null) {
   const email = normalizeEmail(rawEmail);
+  if (await suspended(email)) return;
   const code = randomInt(100000, 1000000).toString();
   const now = Date.now();
 
@@ -36,14 +68,10 @@ export async function requestLoginCode(rawEmail: string, ip: string | null) {
   });
   if (issued.count === 0) return;
 
-  const { error } = await resend.emails.send({
-    from: "Mairie de Zè <onboarding@resend.dev>",
-    to: email,
-    subject: "Mairie des Jeunes de Zè : votre code de vérification",
-    html: `
-      <div style="font-family: sans-serif; max-width: 480px; margin: auto; padding: 32px 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
-        <h2 style="color: #1a3a2a; margin: 0 0 8px;">Mairie des Jeunes de Zè</h2>
-        <p style="color: #6b7280; font-size: 13px; margin: 0 0 24px;">Espace Administration · Accès restreint</p>
+  await sendEmail(
+    email,
+    "Mairie des Jeunes de Zè : votre code de vérification",
+    `
         <p style="margin: 0 0 16px; color: #111827;">Votre code de connexion :</p>
         <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 24px;">
           <span style="font-size: 32px; font-weight: 700; letter-spacing: 0.3em; color: #1a3a2a;">${code}</span>
@@ -51,10 +79,8 @@ export async function requestLoginCode(rawEmail: string, ip: string | null) {
         <p style="font-size: 13px; color: #9ca3af; margin: 0;">
           Ce code expire dans <strong>10 minutes</strong>. Ne le partagez avec personne.
         </p>
-      </div>
     `,
-  });
-  if (error) throw new Error(`Resend email error: ${error.message}`);
+  );
 
   await prisma.auditLog.create({
     data: { action: "LOGIN_OTP_SENT", userEmail: email, ipAddress: ip },
@@ -65,6 +91,7 @@ export async function verifyLoginCode(rawEmail: string, code: string, ip: string
   const email = normalizeEmail(rawEmail);
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user?.otpHash || !user.otpExpires || user.otpExpires.getTime() < Date.now()) return null;
+  if (await suspended(email)) return null;
 
   const log = (action: string) =>
     prisma.auditLog.create({ data: { action, userEmail: email, ipAddress: ip } });
@@ -83,6 +110,7 @@ export async function verifyLoginCode(rawEmail: string, code: string, ip: string
 
   if (!(await bcrypt.compare(code, user.otpHash))) {
     await log("LOGIN_OTP_FAILED");
+    await alertIfJustSuspended(email, log);
     return null;
   }
 
@@ -92,4 +120,24 @@ export async function verifyLoginCode(rawEmail: string, code: string, ip: string
   });
   await log("LOGIN_OTP_SUCCESS");
   return { id: user.id, email: user.email, name: user.name, role: user.role };
+}
+
+// Parallel guesses may send the alert twice, never zero times
+async function alertIfJustSuspended(email: string, log: (action: string) => Promise<unknown>) {
+  if (!(await suspended(email)) || (await countToday(email, "LOGIN_OTP_SUSPENDED")) > 0) return;
+  await log("LOGIN_OTP_SUSPENDED");
+  await sendEmail(
+    email,
+    "Mairie des Jeunes de Zè : connexion suspendue pour 24 heures",
+    `
+        <p style="margin: 0 0 16px; color: #111827;">
+          Trop de codes erronés ont été saisis pour votre compte. Par sécurité, aucun code de
+          connexion ne lui sera envoyé pendant 24 heures.
+        </p>
+        <p style="margin: 0; color: #111827;">
+          Si ce n'était pas vous, quelqu'un connaît votre adresse et tente d'accéder au compte.
+          Prévenez le super-administrateur.
+        </p>
+    `,
+  );
 }

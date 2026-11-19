@@ -1,5 +1,6 @@
+import { Prisma } from "@prisma/client";
 import { after, NextResponse } from "next/server";
-import { requestLoginCode } from "@/lib/login";
+import { EmailError, requestLoginCode } from "@/lib/login";
 import { clientIp } from "@/lib/request";
 import { z } from "@/lib/zod";
 
@@ -23,10 +24,12 @@ export async function POST(req: Request) {
       await requestLoginCode(body.data.email, ip);
     } catch (error) {
       const stage =
-        error instanceof Error && /prisma|database|connect|ECONNREFUSED/i.test(error.message)
-          ? "DATABASE"
-          : error instanceof Error && /resend|email|domain/i.test(error.message)
-            ? "EMAIL"
+        error instanceof EmailError
+          ? "EMAIL"
+          : error instanceof Prisma.PrismaClientKnownRequestError ||
+              error instanceof Prisma.PrismaClientUnknownRequestError ||
+              error instanceof Prisma.PrismaClientInitializationError
+            ? "DATABASE"
             : "UNKNOWN";
       console.error("OTP_SEND_ERROR", stage, error);
     }

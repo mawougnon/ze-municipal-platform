@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   user: { updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-  auditLog: { create: vi.fn() },
+  auditLog: { create: vi.fn(), count: vi.fn() },
 }));
 const send = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/prisma", () => ({ prisma: db }));
@@ -13,11 +13,13 @@ vi.mock("resend", () => ({
   },
 }));
 
-const { MAX_ATTEMPTS, requestLoginCode, verifyLoginCode } = await import("@/lib/login");
+const { EmailError, MAX_ATTEMPTS, MAX_DAILY_FAILURES, requestLoginCode, verifyLoginCode } =
+  await import("@/lib/login");
 
 beforeEach(() => {
   vi.resetAllMocks();
   db.auditLog.create.mockResolvedValue({});
+  db.auditLog.count.mockResolvedValue(0);
   db.user.update.mockResolvedValue({});
   send.mockResolvedValue({ data: { id: "mail" }, error: null });
 });
@@ -49,8 +51,15 @@ describe("requestLoginCode", () => {
   it("raises when the email could not be sent, without logging it as sent", async () => {
     db.user.updateMany.mockResolvedValue({ count: 1 });
     send.mockResolvedValue({ data: null, error: { message: "domain is not verified" } });
-    await expect(requestLoginCode("admin@example.com", null)).rejects.toThrow(/Resend/);
+    await expect(requestLoginCode("admin@example.com", null)).rejects.toThrow(EmailError);
     expect(actions()).toEqual([]);
+  });
+
+  it("sends no code to an account with too many wrong codes today", async () => {
+    db.auditLog.count.mockResolvedValue(MAX_DAILY_FAILURES);
+    await requestLoginCode("admin@example.com", null);
+    expect(db.user.updateMany).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 });
 
@@ -125,5 +134,27 @@ describe("verifyLoginCode", () => {
 
     expect(results.every((result) => result === null)).toBe(true);
     expect(actions().filter((action) => action === "LOGIN_OTP_FAILED")).toHaveLength(MAX_ATTEMPTS);
+  });
+
+  it("refuses even the right code once the account is suspended", async () => {
+    db.user.findUnique.mockResolvedValue(await user());
+    db.auditLog.count.mockResolvedValue(MAX_DAILY_FAILURES);
+    expect(await verifyLoginCode("admin@example.com", "123456", null)).toBeNull();
+    expect(db.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("alerts the owner once, on the wrong code that reaches the daily limit", async () => {
+    db.user.findUnique.mockResolvedValue(await user());
+    db.user.updateMany.mockResolvedValue({ count: 1 });
+    // Before the guess, after it, then the alerts already sent today
+    db.auditLog.count
+      .mockResolvedValueOnce(MAX_DAILY_FAILURES - 1)
+      .mockResolvedValueOnce(MAX_DAILY_FAILURES)
+      .mockResolvedValueOnce(0);
+
+    expect(await verifyLoginCode("admin@example.com", "000000", null)).toBeNull();
+    expect(actions()).toEqual(["LOGIN_OTP_FAILED", "LOGIN_OTP_SUSPENDED"]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0].subject).toMatch(/suspendue/);
   });
 });
