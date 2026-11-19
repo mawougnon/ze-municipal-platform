@@ -8,6 +8,7 @@ const MAX_PER_PHONE_PER_HOUR = 3;
 const MAX_TOTAL_PER_HOUR = 100;
 
 class UnknownFileError extends Error {}
+class TooManyError extends Error {}
 
 export async function POST(req: Request) {
   try {
@@ -35,25 +36,23 @@ export async function POST(req: Request) {
       );
     }
 
-    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const [byPhone, total] = await Promise.all([
-      prisma.application.count({
-        where: { phone: result.data.phone, createdAt: { gte: hourAgo } },
-      }),
-      prisma.application.count({ where: { createdAt: { gte: hourAgo } } }),
-    ]);
-
-    if (byPhone >= MAX_PER_PHONE_PER_HOUR || total >= MAX_TOTAL_PER_HOUR) {
-      return NextResponse.json(
-        { error: "Trop de candidatures. Réessayez plus tard." },
-        { status: 429 },
-      );
-    }
-
     // A file that was never issued or is already attached cancels the whole application
     const { files } = result.data;
     const attached = await prisma
       .$transaction(async (tx) => {
+        // Applications wait for each other here, so parallel requests cannot pass the limits
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(7301)`;
+        const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const [byPhone, total] = await Promise.all([
+          tx.application.count({
+            where: { phone: result.data.phone, createdAt: { gte: hourAgo } },
+          }),
+          tx.application.count({ where: { createdAt: { gte: hourAgo } } }),
+        ]);
+        if (byPhone >= MAX_PER_PHONE_PER_HOUR || total >= MAX_TOTAL_PER_HOUR) {
+          throw new TooManyError();
+        }
+
         const application = await tx.application.create({
           data: {
             opportunityId: result.data.opportunityId,
@@ -69,14 +68,21 @@ export async function POST(req: Request) {
           data: { applicationId: application.id },
         });
         if (count !== files.length) throw new UnknownFileError();
-        return true;
+        return "created";
       })
       .catch((error) => {
-        if (error instanceof UnknownFileError) return false;
+        if (error instanceof UnknownFileError) return "unknown-file";
+        if (error instanceof TooManyError) return "too-many";
         throw error;
       });
 
-    if (!attached) {
+    if (attached === "too-many") {
+      return NextResponse.json(
+        { error: "Trop de candidatures. Réessayez plus tard." },
+        { status: 429 },
+      );
+    }
+    if (attached === "unknown-file") {
       return NextResponse.json({ error: "Document invalide." }, { status: 400 });
     }
     return NextResponse.json({ success: true }, { status: 201 });

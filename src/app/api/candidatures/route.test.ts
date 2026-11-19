@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   $transaction: vi.fn(),
+  $executeRaw: vi.fn(),
   opportunity: { findUnique: vi.fn() },
   application: { count: vi.fn(), create: vi.fn() },
   applicationFile: { updateMany: vi.fn() },
