@@ -1,6 +1,6 @@
 # Zè Youth City Hall platform
 
-Website and admin area of the Mairie des Jeunes de Zè, a branch of the Association Mairie des Jeunes du Bénin (AMJB), mandate 2025-2030. I built it as a volunteer and it runs in production.
+Website and admin area of the Mairie des Jeunes de Zè, a branch of the Association Mairie des Jeunes du Bénin (AMJB), mandate 2025-2030.
 
 Live: https://ze-municipal-webdev-plqu.vercel.app (temporary domain)
 
@@ -36,8 +36,6 @@ Next.js 16 (App Router), TypeScript, PostgreSQL and Storage on Supabase, Prisma 
 - The Content Security Policy allows inline styles. It does not allow inline scripts.
 - Uploaded PDFs are checked by type and size, not scanned for malware. Admins should open them with care.
 - Upload limits are per IP address and overall. Someone rotating addresses can reach the overall limit and block uploads for an hour.
-- Backups depend on the Supabase plan, and the free plan has none.
-- The browser tests run by hand, not in CI, because they need a running server.
 
 ## Project layout
 
@@ -96,6 +94,10 @@ E2E_ALLOW_WRITES=staging node --env-file=.env.staging node_modules/@playwright/t
 ## Deployment
 
 Vercel deploys `master`. Migrations are applied by hand with `npm run db:migrate`, which uses `DIRECT_URL`. `.env.example` lists every variable, and the daily purge in `vercel.json` needs `CRON_SECRET`.
+
+## How it was built
+
+Co-authored with Claude Opus 5.5, Anthropic's AI coding assistant.
 
 ## License
 
