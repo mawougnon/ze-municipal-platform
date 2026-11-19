@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.1 (November 2026)
+
+### Fixed
+
+- Login codes are limited per account as well: after 20 wrong codes in a day, the account gets no code for 24 hours and its owner gets an email.
+- The limits on applications hold under parallel requests.
+- A database outage answers with an error instead of "not found".
+- Login errors are classified by type instead of by matching their message.
+
+### Added
+
+- Tests against a real PostgreSQL, run in CI, for the limits that depend on concurrency.
+
 ## 1.1.0 (November 2026)
 
 ### Added
