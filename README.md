@@ -19,7 +19,7 @@ Next.js 16 (App Router), TypeScript, PostgreSQL and Storage on Supabase, Prisma 
 
 ## Security
 
-- Sign in by email code only, with no password. Codes are random, hashed with bcrypt, valid for 10 minutes and limited to 5 attempts, counted atomically.
+- Sign in by email code only, with no password. Codes are random, hashed with bcrypt, valid for 10 minutes and limited to 5 attempts, counted atomically. After 20 wrong codes in a day, the account gets no code for 24 hours and its owner gets an email.
 - A code request gets the same answer whether or not the address has an account.
 - Sessions are checked against the database on every request, so a removed account loses access at once.
 - Every API route and admin page checks the session on the server. `src/proxy.ts` only hides the admin pages.
@@ -77,6 +77,12 @@ The login page is at `/portail/<ADMIN_SECRET_TOKEN>`.
 npm run lint
 npm run typecheck
 npm test
+```
+
+Some tests need a real PostgreSQL, such as those that send parallel requests. They refuse to run against the database in `.env`:
+
+```bash
+DATABASE_URL=postgresql://... npm run test:db
 ```
 
 Browser tests run against a server that is already started. The public ones only read, so they can target any deployment:

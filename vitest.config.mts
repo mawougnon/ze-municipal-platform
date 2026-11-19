@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   resolve: {
     alias: [
       { find: /^@\//, replacement: `${root}/src/` },
@@ -12,8 +12,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["**/*.test.ts"],
-    exclude: ["node_modules/**", ".next/**"],
+    // npm run test:db runs the tests that need a real database, one file at a time
+    include: mode === "db" ? ["**/*.db.test.ts"] : ["**/*.test.ts"],
+    exclude: ["node_modules/**", ".next/**", ...(mode === "db" ? [] : ["**/*.db.test.ts"])],
+    fileParallelism: mode !== "db",
     env: { NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co" },
   },
-});
+}));
