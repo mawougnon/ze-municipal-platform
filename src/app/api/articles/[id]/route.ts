@@ -3,7 +3,7 @@ import { adminAccess } from "@/lib/admin";
 import { articleSchema } from "@/lib/articles";
 import { logAdminAction, logSave } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
-import { errorResponse, readBody } from "@/lib/request";
+import { errorResponse, nullIfMissing, readBody } from "@/lib/request";
 import { removePublicFile } from "@/lib/supabase-admin";
 
 interface Context {
@@ -38,7 +38,7 @@ export async function PUT(req: Request, { params }: Context) {
       await logSave(tx, session, req, "ARTICLE", article);
       return { article, previous };
     })
-    .catch(() => null);
+    .catch(nullIfMissing);
   if (!saved) return errorResponse("Article introuvable.", 404);
 
   const kept = new Set([saved.article.coverImageUrl, ...photos.map((photo) => photo.url)]);
@@ -61,7 +61,7 @@ export async function DELETE(req: Request, { params }: Context) {
       await logAdminAction(tx, session, req, "ARTICLE_DELETED", article.title);
       return article;
     })
-    .catch(() => null);
+    .catch(nullIfMissing);
   if (!deleted) return errorResponse("Article introuvable.", 404);
 
   const files = [deleted.coverImageUrl, ...deleted.photos.map((photo) => photo.url)];

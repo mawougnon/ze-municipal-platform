@@ -3,7 +3,7 @@ import { adminAccess } from "@/lib/admin";
 import { logAdminAction, logSave } from "@/lib/audit";
 import { opportunitySchema } from "@/lib/opportunities";
 import { prisma } from "@/lib/prisma";
-import { errorResponse, readBody } from "@/lib/request";
+import { errorResponse, nullIfMissing, readBody } from "@/lib/request";
 import { removePublicFile } from "@/lib/supabase-admin";
 
 interface Context {
@@ -25,7 +25,7 @@ export async function PUT(req: Request, { params }: Context) {
       await logSave(tx, session, req, "OPPORTUNITY", opportunity);
       return { opportunity, previous };
     })
-    .catch(() => null);
+    .catch(nullIfMissing);
   if (!saved) return errorResponse("Offre introuvable.", 404);
 
   if (saved.previous.imageUrl !== saved.opportunity.imageUrl) {
@@ -45,7 +45,7 @@ export async function DELETE(req: Request, { params }: Context) {
       await logAdminAction(tx, session, req, "OPPORTUNITY_DELETED", opportunity.title);
       return opportunity;
     })
-    .catch(() => null);
+    .catch(nullIfMissing);
   if (!deleted) return errorResponse("Offre introuvable.", 404);
 
   await removePublicFile("photos", deleted.imageUrl);

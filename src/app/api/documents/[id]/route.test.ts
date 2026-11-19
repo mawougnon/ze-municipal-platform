@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const auth = vi.hoisted(() => vi.fn());
@@ -64,8 +65,12 @@ it("gives the featured place to a published document", async () => {
 });
 
 it("answers 404 for an unknown document", async () => {
-  db.document.findUniqueOrThrow.mockRejectedValue(new Error("not found"));
-  db.document.delete.mockRejectedValue(new Error("not found"));
+  const missing = new Prisma.PrismaClientKnownRequestError("missing", {
+    code: "P2025",
+    clientVersion: "5",
+  });
+  db.document.findUniqueOrThrow.mockRejectedValue(missing);
+  db.document.delete.mockRejectedValue(missing);
   expect((await put(file("new"))).status).toBe(404);
   expect((await remove()).status).toBe(404);
   expect(removePublicFile).not.toHaveBeenCalled();

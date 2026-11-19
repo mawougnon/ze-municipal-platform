@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const auth = vi.hoisted(() => vi.fn());
@@ -39,10 +40,17 @@ it("records the title of a deleted article", async () => {
   expect(removePublicFile).toHaveBeenCalledWith("photos", "photo");
 });
 
-it("writes nothing to the log when the deletion fails", async () => {
-  db.article.delete.mockRejectedValue(new Error("not found"));
+it("answers 404 for an unknown article and writes nothing to the log", async () => {
+  db.article.delete.mockRejectedValue(
+    new Prisma.PrismaClientKnownRequestError("missing", { code: "P2025", clientVersion: "5" }),
+  );
   expect((await remove()).status).toBe(404);
   expect(db.auditLog.create).not.toHaveBeenCalled();
+});
+
+it("lets a database outage fail instead of answering 404", async () => {
+  db.article.delete.mockRejectedValue(new Error("connection refused"));
+  await expect(remove()).rejects.toThrow("connection refused");
 });
 
 it("saves the gallery in order and removes only the photos taken out", async () => {

@@ -17,8 +17,7 @@ export async function GET(req: Request, { params }: Context) {
   const file = await prisma.applicationFile.findUnique({ where: { path } });
   if (!file?.applicationId) return errorResponse("Document introuvable.", 404);
 
-  const url = await signedReadUrl(path).catch(() => null);
-  if (!url) return errorResponse("Document introuvable.", 404);
+  const url = await signedReadUrl(path);
 
   await logAdminAction(prisma, session, req, "APPLICATION_FILE_OPENED", file.applicationId);
   return NextResponse.redirect(url);

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import type { z } from "zod";
 
@@ -14,4 +15,10 @@ export async function readBody<Schema extends z.ZodType>(req: Request, schema: S
   const result = schema.safeParse(await req.json().catch(() => null));
   if (!result.success) return { invalid: errorResponse(result.error.issues[0].message, 400) };
   return { data: result.data as z.output<Schema> };
+}
+
+// For .catch(): a missing record becomes null, any other error such as an outage still throws
+export function nullIfMissing(error: unknown): null {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return null;
+  throw error;
 }

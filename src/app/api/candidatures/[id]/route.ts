@@ -3,7 +3,7 @@ import { adminAccess } from "@/lib/admin";
 import { removeFiles } from "@/lib/application-files";
 import { logAdminAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
-import { errorResponse } from "@/lib/request";
+import { errorResponse, nullIfMissing } from "@/lib/request";
 
 interface Context {
   params: Promise<{ id: string }>;
@@ -22,7 +22,7 @@ export async function DELETE(req: Request, { params }: Context) {
       await logAdminAction(tx, session, req, "APPLICATION_DELETED", id);
       return deleted.files.map((file) => file.path);
     })
-    .catch(() => null);
+    .catch(nullIfMissing);
   if (!files) return errorResponse("Candidature introuvable.", 404);
 
   // The daily purge retries a file that could not be removed
